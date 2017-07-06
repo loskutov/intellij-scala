@@ -7,7 +7,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.{PsiElement, PsiFile}
 import org.jetbrains.plugins.scala.lang.lexer.ScalaTokenTypes
 import org.jetbrains.plugins.scala.lang.psi.api.ScalaFile
-import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.ScCaseClause
+import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.{ScCaseClause, ScReferencePattern}
 import org.jetbrains.plugins.scala.lang.psi.api.expr._
 import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScFunctionDefinition, ScPatternDefinition, ScVariableDefinition}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTemplateDefinition
@@ -91,6 +91,11 @@ class ScalaHighlightUsagesHandlerFactory extends HighlightUsagesHandlerFactory {
         val templateDef = PsiTreeUtil.getParentOfType(element, classOf[ScTemplateDefinition])
         if (templateDef != null) {
           return new ScalaHighlightPrimaryConstructorExpressionsHandler(templateDef, editor, file, element)
+        }
+      case ScalaTokenTypes.tIDENTIFIER =>
+        val refPattern = PsiTreeUtil.getParentOfType(element, classOf[ScReferencePattern])
+        if (refPattern != null) {
+          return new ScalaHighlightImplicitUsagesHandler(editor, file, refPattern)
         }
       case _ =>
     }

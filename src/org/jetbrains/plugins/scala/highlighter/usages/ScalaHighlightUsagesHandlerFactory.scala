@@ -98,6 +98,8 @@ class ScalaHighlightUsagesHandlerFactory extends HighlightUsagesHandlerFactory {
         if (definition != null) {
           return new ScalaHighlightImplicitUsagesHandler(editor, file, definition)
         }
+      case ScalaTokenTypes.tCOLON =>
+        return new ScalaHighlightImplicitUsagesHandler(editor, file, element)
       case _ =>
     }
     null

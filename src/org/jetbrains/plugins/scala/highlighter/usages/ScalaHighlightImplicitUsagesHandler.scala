@@ -5,11 +5,15 @@ import java.util
 import com.intellij.codeInsight.highlighting.HighlightUsagesHandlerBase
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
+import com.intellij.psi.impl.source.tree.LeafPsiElement
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.{PsiElement, PsiFile}
 import com.intellij.util.Consumer
 import org.jetbrains.plugins.scala.codeInspection.collections.MethodRepr
 import org.jetbrains.plugins.scala.extensions._
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiElement
+import org.jetbrains.plugins.scala.lang.psi.api.base.ScReferenceElement
+import org.jetbrains.plugins.scala.lang.psi.api.base.types.ScTypeElement
 import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression.ExpressionTypeResult
 import org.jetbrains.plugins.scala.lang.psi.api.expr.{ScExpression, ScMethodCall, ScParenthesisedExpr}
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
@@ -18,10 +22,10 @@ import org.jetbrains.plugins.scala.lang.psi.types.result.Success
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
-class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target: ScalaPsiElement)
-    extends HighlightUsagesHandlerBase[ScalaPsiElement](editor, file) {
+class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target: PsiElement)
+    extends HighlightUsagesHandlerBase[PsiElement](editor, file) {
 
-  private def isImplicitConversionOf(target: ScalaPsiElement, e: ScExpression): Boolean =
+  private def isImplicitConversionOf(target: PsiElement, e: ScExpression): Boolean =
     e.getTypeAfterImplicitConversion() match {
       case ExpressionTypeResult(Success(_, _), _, Some(implicitFunction)) =>
         implicitFunction match {
@@ -32,7 +36,7 @@ class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target:
       case _ => false
     }
 
-  private def isImplicitParameterOf(target: ScalaPsiElement, e: ScExpression): Boolean = {
+  private def isImplicitParameterOf(target: PsiElement, e: ScExpression): Boolean = {
     val pars = e.findImplicitParameters.getOrElse(Seq.empty)
     pars.exists(_.element == target)
   }
@@ -45,24 +49,58 @@ class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target:
     case _                                                                      => expr
   }
 
-  override def getTargets: util.List[ScalaPsiElement] = util.Collections.singletonList(target)
+  override def getTargets: util.List[PsiElement] = util.Collections.singletonList(target)
 
-  override def selectTargets(targets: util.List[ScalaPsiElement],
-                             selectionConsumer: Consumer[util.List[ScalaPsiElement]]): Unit =
+  override def selectTargets(targets: util.List[PsiElement], selectionConsumer: Consumer[util.List[PsiElement]]): Unit =
     selectionConsumer.consume(targets)
 
-  override def computeUsages(targets: util.List[ScalaPsiElement]): Unit = {
-    val usages = targets.asScala.flatMap { target =>
-      file
-        .depthFirst()
-        .collect {
-          case e: ScExpression if isImplicitParameterOf(target, e) || isImplicitConversionOf(target, e) =>
-            val nameRange = refNameId(e).getTextRange
-            TextRange.create(nameRange.getStartOffset, e.getTextOffset + e.getTextLength)
-        }
+  override def computeUsages(targets: util.List[PsiElement]): Unit = {
+    val usages = targets.asScala.flatMap {
+      case Reference(t) =>
+        file
+          .depthFirst()
+          .collect {
+            case e: ScExpression if isImplicitParameterOf(t, e) || isImplicitConversionOf(t, e) =>
+              val nameRange = refNameId(e).getTextRange
+              TextRange.create(nameRange.getStartOffset, e.getTextOffset + e.getTextLength)
+          }
+      case _ => Seq.empty
     }
     myReadUsages.addAll(usages.asJava)
   }
 
   override def highlightReferences: Boolean = true
+}
+
+/** An element that references some other element.
+ * Besides just ScReferenceElement, colon in context bounds is considered a reference to the corresponding evidence.
+ */
+object Reference {
+  def unapply(e: PsiElement): Option[PsiElement] = e match {
+    case ref: ScReferenceElement => Some(ref.resolve)
+    case se: ScalaPsiElement     => Some(se)
+    // As this handler is only used for ScalaPsiElements and colons (see ScalaHighlightUsagesHandlerFactory),
+    // `colon` is actually required to be a colon
+    case colon: LeafPsiElement =>
+      PsiTreeUtil.getParentOfType(colon, classOf[ScFunction]) match {
+        case null => None
+        case fn =>
+          val parameterClauses = fn.effectiveParameterClauses
+          val implicitParams   = parameterClauses.filter(_.isImplicit).flatMap(_.effectiveParameters)
+          val targetType       = colon.getNextSiblingNotWhitespaceComment
+          targetType match {
+            case t: ScTypeElement =>
+              val evidences = implicitParams.filter { param =>
+                (param.typeElement, t.analog) match {
+                  case (Some(t1), Some(t2)) if t1.calcType == t2.calcType => true
+                  case _                                                  => false
+                }
+              }
+              if (evidences.length == 1) Some(evidences.head)
+              else None
+            case _ => None
+          }
+      }
+    case _ => None
+  }
 }

@@ -156,6 +156,14 @@ class ScalaFindUsagesHandler(element: PsiElement, factory: ScalaFindUsagesHandle
 
   override def processElementUsages(element: PsiElement, processor: Processor[UsageInfo], options: FindUsagesOptions): Boolean = {
     if (!super.processElementUsages(element, processor, options)) return false
+    element match {
+      case e: ScNamedElement =>
+        for (usage <- SemanticDbInterop(getProject).findImplicitUsages(e)) {
+          val processed = inReadAction(processor.process(new UsageInfo(usage)))
+          if (!processed) return false
+        }
+      case _ =>
+    }
     options match {
       case s: ScalaTypeDefinitionFindUsagesOptions if element.isInstanceOf[ScTypeDefinition] =>
         val definition = element.asInstanceOf[ScTypeDefinition]

@@ -90,6 +90,10 @@ object Dependencies {
   val scalariform_2_11: ModuleID = "org.scalariform" % "scalariform_2.11" % "0.1.7"
   val macroParadise: ModuleID = "org.scalameta" % "paradise" % paradiseVersion cross CrossVersion.full
   val scalaMetaCore: ModuleID = "org.scalameta" % "scalameta_2.11" % scalaMetaVersion withSources() exclude("com.google.protobuf", "protobuf-java")
+  val scalaMetaSemantic: ModuleID = "org.scalameta" % "semantic_2.11" % scalaMetaVersion
+  val scalapb: ModuleID = "com.trueaccord.scalapb" % "scalapb-runtime_2.11" % "0.6.1"
+  val lenses: ModuleID = "com.trueaccord.lenses" % "lenses_2.11" % "0.4.12"
+  val protobuf: ModuleID = "com.google.protobuf" % "protobuf-java" % "3.3.1"
 
   val bcel: ModuleID = "org.apache.bcel" % "bcel" % "6.0"
 
@@ -119,6 +123,13 @@ object DependencyGroups {
   val scalastyle: Seq[ModuleID] = Seq(
     scalastyle_2_11,
     scalariform_2_11
+  )
+
+  val semanticInterop: Seq[ModuleID] = Seq(
+    scalaMetaSemantic,
+    scalapb,
+    lenses,
+    protobuf
   )
 
   val scalaCommunity: Seq[ModuleID] = Seq(

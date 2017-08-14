@@ -295,7 +295,13 @@ lazy val pluginPackagerCommunity =
         Library(scalaLibrary,
           "lib/scala-library.jar"),
         Library(bcel,
-          "lib/bcel.jar")
+          "lib/bcel.jar"),
+        Library(scalapb,
+          "lib/isolated/scalapb-runtime.jar"),
+        Library(protobuf,
+          "lib/isolated/protobuf-java.jar"),
+        Library(lenses,
+          "lib/isolated/lenses.jar")
       ) ++
         crossLibraries.map { lib =>
           Library(
@@ -306,7 +312,7 @@ lazy val pluginPackagerCommunity =
 
       Packaging.convertEntriesToMappings(
         jps ++ lib ++ launcher,
-        dependencyClasspath.value
+        dependencyClasspath.value ++ dependencyClasspath.in(semanticdbInterop, Compile).value
       )
     },
     pack := {
@@ -315,6 +321,9 @@ lazy val pluginPackagerCommunity =
     }
   )
 
+lazy val semanticdbInterop = newProject("semanticdbInterop").settings(
+  libraryDependencies ++= DependencyGroups.semanticInterop
+)
 
 lazy val pluginCompressorCommunity =
   newProject("pluginCompressorCommunity")

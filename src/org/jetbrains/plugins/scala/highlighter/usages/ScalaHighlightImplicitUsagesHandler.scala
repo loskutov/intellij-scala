@@ -18,28 +18,13 @@ import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression.ExpressionType
 import org.jetbrains.plugins.scala.lang.psi.api.expr.{ScExpression, ScMethodCall, ScParenthesisedExpr}
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 import org.jetbrains.plugins.scala.lang.psi.types.result.Success
+import org.jetbrains.plugins.scala.lang.resolve.ScalaResolveResult
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
 class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target: PsiElement)
     extends HighlightUsagesHandlerBase[PsiElement](editor, file) {
-
-  private def isImplicitConversionOf(target: PsiElement, e: ScExpression): Boolean =
-    e.getTypeAfterImplicitConversion() match {
-      case ExpressionTypeResult(Success(_, _), _, Some(implicitFunction)) =>
-        implicitFunction match {
-          case `target`        => true
-          case fun: ScFunction => fun.getSyntheticNavigationElement.contains(target)
-          case _               => false
-        }
-      case _ => false
-    }
-
-  private def isImplicitParameterOf(target: PsiElement, e: ScExpression): Boolean = {
-    val pars = e.findImplicitParameters.getOrElse(Seq.empty)
-    pars.exists(_.element == target)
-  }
 
   @tailrec
   private def refNameId(expr: PsiElement): PsiElement = expr match {
@@ -55,21 +40,47 @@ class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target:
     selectionConsumer.consume(targets)
 
   override def computeUsages(targets: util.List[PsiElement]): Unit = {
-    val usages = targets.asScala.flatMap {
-      case Reference(t) =>
-        file
-          .depthFirst()
-          .collect {
-            case e: ScExpression if isImplicitParameterOf(t, e) || isImplicitConversionOf(t, e) =>
-              val nameRange = refNameId(e).getTextRange
-              TextRange.create(nameRange.getStartOffset, e.getTextOffset + e.getTextLength)
-          }
-      case _ => Seq.empty
+    import ScalaHighlightImplicitUsagesHandler._
+    val usages = findUsages(file, targets.asScala).map { e =>
+      val nameRange = refNameId(e).getTextRange
+      TextRange.create(nameRange.getStartOffset, e.getTextOffset + e.getTextLength)
     }
     myReadUsages.addAll(usages.asJava)
   }
 
   override def highlightReferences: Boolean = true
+}
+
+object ScalaHighlightImplicitUsagesHandler {
+  private implicit class ImplicitTarget(target: PsiElement) {
+    def isImplicitConversionOf(e: ScExpression): Boolean =
+      e.getTypeAfterImplicitConversion() match {
+        case ExpressionTypeResult(Success(_, _), _, Some(implicitFunction)) =>
+          implicitFunction match {
+            case `target`        => true
+            case fun: ScFunction => fun.getSyntheticNavigationElement.contains(target)
+            case _               => false
+          }
+        case _ => false
+      }
+
+    def isImplicitParameterOf(e: ScExpression): Boolean = {
+      val pars = e.findImplicitParameters.getOrElse(Seq.empty)
+      pars.exists(_.element.getNavigationElement == target.getNavigationElement)
+    }
+  }
+
+  def findUsages(file: PsiFile, targets: Seq[PsiElement]): Seq[PsiElement] = {
+    def matches(e: ScExpression) = targets.exists {
+      case Reference(t) => t.isImplicitParameterOf(e) || t.isImplicitConversionOf(e)
+      case _            => false
+    }
+
+    file
+      .depthFirst()
+      .collect { case e: ScExpression if matches(e) => e }
+      .toSeq
+  }
 }
 
 /** An element that references some other element.
@@ -78,6 +89,7 @@ class ScalaHighlightImplicitUsagesHandler(editor: Editor, file: PsiFile, target:
 object Reference {
   def unapply(e: PsiElement): Option[PsiElement] = e match {
     case ref: ScReferenceElement => Some(ref.resolve)
+    case rr: ScalaResolveResult  => Some(rr.element)
     case se: ScalaPsiElement     => Some(se)
     // As this handler is only used for ScalaPsiElements and colons (see ScalaHighlightUsagesHandlerFactory),
     // `colon` is actually required to be a colon

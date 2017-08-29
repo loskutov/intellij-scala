@@ -2,26 +2,33 @@ package org.jetbrains.plugins.scala
 package annotator
 package gutter
 
+import java.awt.event.MouseEvent
 import java.util
 import javax.swing.Icon
 
 import com.intellij.codeHighlighting.Pass
-import com.intellij.codeInsight.daemon.{DaemonCodeAnalyzerSettings, LineMarkerInfo, LineMarkerProvider}
+import com.intellij.codeInsight.daemon.{DaemonCodeAnalyzerSettings, GutterIconNavigationHandler, LineMarkerInfo, LineMarkerProvider}
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.{CodeInsightColors, EditorColorsManager}
 import com.intellij.openapi.editor.markup.{GutterIconRenderer, SeparatorPlacement}
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi._
 import com.intellij.psi.search.searches.ClassInheritorsSearch
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.NullableFunction
+import org.jetbrains.plugins.scala.actions.ShowImplicitParametersAction
 import org.jetbrains.plugins.scala.annotator.gutter.GutterIcons._
 import org.jetbrains.plugins.scala.extensions._
 import org.jetbrains.plugins.scala.lang.lexer.ScalaTokenTypes
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil
 import org.jetbrains.plugins.scala.lang.psi.api.base.ScReferenceElement
+import org.jetbrains.plugins.scala.lang.psi.api.base.types.ScTypeArgs
+import org.jetbrains.plugins.scala.lang.psi.api.expr.{ScExpression, ScGenericCall}
 import org.jetbrains.plugins.scala.lang.psi.api.statements._
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.ScParameter
+import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScTypeParamClause}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScNamedElement
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.ScTemplateBody
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScObject, ScTrait, ScTypeDefinition}
@@ -70,12 +77,12 @@ class ScalaLineMarkerProvider(daemonSettings: DaemonCodeAnalyzerSettings, colors
     if (element.getNode.getElementType == ScalaTokenTypes.tIDENTIFIER) {
       val range = element.getTextRange
 
-      if (element.getParent.isInstanceOf[ScReferenceElement]) return null // e.g type A = /*Int*/
+//      if (element.getParent.isInstanceOf[ScReferenceElement]) return null // e.g type A = /*Int*/
 
       def getParent: PsiElement = {
         var e = element
         def test(x: PsiElement) = x match {
-          case _: ScFunction | _: ScValue | _: ScVariable | _: ScTypeDefinition | _: ScTypeAlias => true
+          case _: ScFunction | _: ScValue | _: ScVariable | _: ScTypeDefinition | _: ScTypeAlias | _: ScGenericCall => true
           case _ => false
         }
         while (e != null && !test(e)) e = e.getParent
@@ -142,6 +149,20 @@ class ScalaLineMarkerProvider(daemonSettings: DaemonCodeAnalyzerSettings, colors
                 (e: PsiElement) => "Method '%s' is tail recursive".format(e.getText), null, GutterIconRenderer.Alignment.LEFT)
             case RecursionType.NoRecursion => // no markers
           }
+        case expr: ScExpression if PsiTreeUtil.getParentOfType(element, classOf[ScTypeArgs]) == null && expr.findImplicitParameters.getOrElse(Seq.empty).nonEmpty =>
+          //          val signature = ScalaPsiUtil.superTypeMembers(ta, withSelfType = true)
+          val icon = IMPLEMENTING_METHOD_ICON
+          val typez = ScalaMarkerType.OVERRIDING_MEMBER
+          //          if (signature.nonEmpty) {
+          val actions = Seq(new ShowImplicitParametersAction)
+          return new LineMarkerInfo[PsiElement](expr, range, IMPLEMENTING_METHOD_ICON, Pass.UPDATE_ALL,
+            (e: PsiElement) => "Method '%s' has implicit parameters".format(e.getText), new GutterIconNavigationHandler[PsiElement] {
+              override def navigate(e: MouseEvent, elt: PsiElement): Unit = {
+                println("CLICKED")
+                val v: Editor = null
+              }
+            }, GutterIconRenderer.Alignment.LEFT)
+        //          }
         case _ =>
       }
 

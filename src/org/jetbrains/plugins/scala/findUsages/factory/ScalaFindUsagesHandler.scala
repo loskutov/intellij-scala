@@ -170,24 +170,28 @@ class ScalaFindUsagesHandler(element: PsiElement, factory: ScalaFindUsagesHandle
     if (!super.processElementUsages(element, processor, options)) return false
     options match {
       case s: ScalaImplicitDefinitionFindUsagesOptions if element.isInstanceOf[ScNamedElement] =>
-        def unwrap[T](maybeSeq: Option[Seq[T]]): Seq[T] = maybeSeq.getOrElse(Seq.empty)
-        def dfs(vFile: VirtualFile): Seq[VirtualFile] =
-          vFile +: unwrap(Option(vFile.getChildren).map(_.toSeq)).flatMap(dfs)
+        val usages: Seq[PsiElement] =
+          if (s.useSemanticDb)
+            SemanticDbInterop(getProject).findImplicitUsages(element.asInstanceOf[ScNamedElement])
+          else {
+            def unwrap[T](maybeSeq: Option[Seq[T]]): Seq[T] = maybeSeq.getOrElse(Seq.empty)
+            def dfs(vFile: VirtualFile): Seq[VirtualFile] =
+              vFile +: unwrap(Option(vFile.getChildren).map(_.toSeq)).flatMap(dfs)
 
-        val allFiles = dfs(getProject.getBaseDir)
-        val relevantFiles = allFiles.filter(options.searchScope.contains(_))
-        val el = element match {
-          case r: ScReferenceExpression => r.resolve
-          case _                        => element
-        }
-        val usages: Seq[PsiElement] = inReadAction {
-          for {
-            virtualFile <- relevantFiles
-            file = PsiManager.getInstance(getProject).findFile(virtualFile)
-            usage <- ScalaHighlightImplicitUsagesHandler.findUsages(file, Seq(el))¹
-          } yield usage
-        }
-
+            val allFiles = dfs(getProject.getBaseDir)
+            val relevantFiles = allFiles.filter(options.searchScope.contains(_))
+            val el = element match {
+              case r: ScReferenceExpression => r.resolve
+              case _                        => element
+            }
+            inReadAction {
+              for {
+                virtualFile <- relevantFiles
+                file = PsiManager.getInstance(getProject).findFile(virtualFile)
+                usage <- ScalaHighlightImplicitUsagesHandler.findUsages(file, Seq(el))
+              } yield usage
+            }
+          }
         for (usage <- usages) {
           val processed = inReadAction(processor.process(new UsageInfo(usage)))
           if (!processed) return false
